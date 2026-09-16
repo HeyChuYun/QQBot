@@ -1,0 +1,1 @@
+"""GitHub commit notification plugin."""

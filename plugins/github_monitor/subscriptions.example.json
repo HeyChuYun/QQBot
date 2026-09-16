@@ -1,0 +1,21 @@
+{
+  "personal": [
+    {
+      "name": "管理员",
+      "openid": "个人 user_openid",
+      "repositories": ["owner/repo", "another-owner/another-repo"]
+    }
+  ],
+  "groups": [
+    {
+      "name": "开发群",
+      "openid": "群 group_openid",
+      "repositories": ["owner/repo"]
+    },
+    {
+      "name": "测试群",
+      "openid": "另一个群 group_openid",
+      "repositories": ["another-owner/another-repo"]
+    }
+  ]
+}

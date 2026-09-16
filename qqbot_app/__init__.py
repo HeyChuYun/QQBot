@@ -1,0 +1,1 @@
+"""QQ bot application package."""

@@ -1,0 +1,23 @@
+services:
+  qqbot:
+    image: ${QQBOT_IMAGE:-qqbot-framework:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      BROWSER_EXECUTABLE: /usr/bin/chromium
+      PLUGIN_DEPENDENCIES_DIR: /app/.plugin-deps
+    volumes:
+      - type: bind
+        source: ./plugins
+        target: /app/plugins
+      - type: volume
+        source: plugin-dependencies
+        target: /app/.plugin-deps
+
+volumes:
+  plugin-dependencies:

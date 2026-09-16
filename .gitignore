@@ -1,0 +1,12 @@
+.env
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+*.log
+.idea/
+.pytest_cache/
+data/github_state.json
+plugins/*/config.env
+plugins/*/subscriptions.json
+plugins/*/data/
