@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import IsolatedAsyncioTestCase, TestCase
 
 from qqbot_app.plugin import MessageContext, PluginManager
-from plugins.github_monitor.plugin import load_subscriptions
+from plugins.github_monitor.plugin import GitHubPluginSettings, load_subscriptions
 
 
 PLUGIN_CODE = """\
@@ -109,6 +109,71 @@ class PluginDiscoveryTest(TestCase):
             )
 
             self.assertEqual(load_subscriptions(path), ())
+
+    def test_environment_references_are_rejected_in_subscriptions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "subscriptions.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "personal": [],
+                        "groups": [
+                            {
+                                "name": "开发群",
+                                "openid": "${QQ_BOT_NOTIFY_GROUP_OPENID}",
+                                "repositories": ["owner/repo"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "不允许引用环境变量"):
+                load_subscriptions(path)
+
+    def test_plugin_settings_are_read_directly_from_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            plugin_dir = Path(temp)
+            (plugin_dir / "config.env").write_text(
+                "GITHUB_TOKEN=file-token\n"
+                "GITHUB_POLL_INTERVAL_SECONDS=180\n"
+                "BROWSER_EXECUTABLE=/usr/bin/chromium\n",
+                encoding="utf-8",
+            )
+            (plugin_dir / "subscriptions.json").write_text(
+                json.dumps(
+                    {
+                        "personal": [
+                            {
+                                "name": "管理员",
+                                "openid": "user-openid-12345",
+                                "repositories": ["owner/repo"],
+                            }
+                        ],
+                        "groups": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            settings = GitHubPluginSettings.load(plugin_dir)
+            self.assertEqual(settings.token, "file-token")
+            self.assertEqual(settings.interval_seconds, 180)
+            self.assertEqual(settings.browser_executable, "/usr/bin/chromium")
+
+    def test_environment_references_are_rejected_in_plugin_config(self):
+        with tempfile.TemporaryDirectory() as temp:
+            plugin_dir = Path(temp)
+            (plugin_dir / "config.env").write_text(
+                "GITHUB_TOKEN=${GITHUB_TOKEN}\n", encoding="utf-8"
+            )
+            (plugin_dir / "subscriptions.json").write_text(
+                '{"personal": [], "groups": []}', encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(ValueError, "不允许引用环境变量"):
+                GitHubPluginSettings.load(plugin_dir)
 
 
 class PluginDispatchTest(IsolatedAsyncioTestCase):

@@ -9,8 +9,11 @@ services:
     env_file:
       - .env
     environment:
-      BROWSER_EXECUTABLE: /usr/bin/chromium
       PLUGIN_DEPENDENCIES_DIR: /app/.plugin-deps
+      PLUGIN_PIP_CACHE_DIR: /app/.pip-cache
+      PLUGIN_PIP_INDEX_URL: ${PLUGIN_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}
+      PLUGIN_PIP_TIMEOUT: ${PLUGIN_PIP_TIMEOUT:-300}
+      PLUGIN_PIP_RETRIES: ${PLUGIN_PIP_RETRIES:-10}
     volumes:
       - type: bind
         source: ./plugins
@@ -18,6 +21,10 @@ services:
       - type: volume
         source: plugin-dependencies
         target: /app/.plugin-deps
+      - type: volume
+        source: plugin-pip-cache
+        target: /app/.pip-cache
 
 volumes:
   plugin-dependencies:
+  plugin-pip-cache:

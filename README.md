@@ -44,7 +44,7 @@ QQ_BOT_SECRET=你的AppSecret
 QQ_BOT_ADMIN_OPENID=管理者的user_openid
 ```
 
-各插件的业务设置放在插件自己的 `config.env` 中。
+各插件的业务设置放在插件自己的配置文件中。插件配置不会读取或展开环境变量；必须在文件中直接填写值。
 
 ## 3. 启动机器人
 
@@ -71,8 +71,8 @@ python bot.py
 ## 4. GitHub 提交监听
 
 1. 管理员在机器人单聊中发送 `/我的ID`，群聊中发送 `/本群ID`，取得对应的 OpenID。
-2. 打开 `plugins/github_monitor/subscriptions.json`，在 `personal` 和 `groups` 列表中分别填写接收者及其仓库列表。
-3. 私有仓库需要在 `plugins/github_monitor/config.env` 中填写只读 GitHub Token。
+2. 打开 `plugins/github_monitor/subscriptions.json`，在 `personal` 和 `groups` 列表中直接填写接收者 OpenID 及其仓库列表。
+3. 私有仓库需要在 `plugins/github_monitor/config.env` 的 `GITHUB_TOKEN` 中直接填写只读 GitHub Token。
 4. 重启机器人，通过服务日志确认 GitHub 提交监听插件已经启动。
 
 订阅配置示例：
@@ -179,10 +179,11 @@ docker compose up -d --build
 docker compose logs -f qqbot
 ```
 
-Compose 会进行两个挂载：
+Compose 会进行三个挂载：
 
 - 宿主机 `./plugins` 绑定到容器 `/app/plugins`，删除宿主机插件目录并重启容器即可卸载插件。
 - 命名卷 `plugin-dependencies` 挂载到 `/app/.plugin-deps`，缓存各插件 `requirements.txt` 声明的依赖。
+- 命名卷 `plugin-pip-cache` 挂载到 `/app/.pip-cache`，缓存插件依赖下载包。
 
 修改插件或配置后执行 `docker compose restart qqbot`。插件指令发生变化后，用下面的命令同步 QQ `/` 面板：
 
@@ -190,11 +191,19 @@ Compose 会进行两个挂载：
 docker compose run --rm qqbot python sync_commands.py
 ```
 
-容器内置系统 Chromium 和中文字体，但没有 GitHub 插件代码。GitHub 插件挂载后，其 Playwright Python 依赖由 `docker_entrypoint.py` 自动安装；依赖清单未变化时会直接使用命名卷缓存。
+容器内置系统 Chromium 和中文字体，但没有 GitHub 插件代码。GitHub 插件挂载后，其 Playwright Python 依赖由 `docker_entrypoint.py` 自动安装；依赖清单未变化时会直接使用命名卷缓存。Docker 部署时需要在挂载的 `plugins/github_monitor/config.env` 中设置 `BROWSER_CHANNEL=` 和 `BROWSER_EXECUTABLE=/usr/bin/chromium`。
+
+国内服务器默认使用阿里云 PyPI 镜像。可通过以下环境变量调整插件依赖下载，不需要修改镜像：
+
+- `PLUGIN_PIP_INDEX_URL`：Python 镜像地址，默认 `https://mirrors.aliyun.com/pypi/simple/`。
+- `PLUGIN_PIP_EXTRA_INDEX_URL`：额外备用源，可留空。
+- `PLUGIN_PIP_TIMEOUT`：单次下载超时秒数，默认 `300`。
+- `PLUGIN_PIP_RETRIES`：失败重试次数，默认 `10`。
+- `PLUGIN_PIP_CACHE_DIR`：下载缓存目录，默认 `/app/.pip-cache`。
 
 ## 8. GitHub Actions
 
-工作流位于 `.github/workflows/docker.yml`。推送到 `main` 或 `master`、推送 `v*` 或 `release-v*` 标签以及手动运行时，会构建框架镜像并发布到 `ghcr.io/<仓库所有者>/<仓库名>`。例如 `release-v1.0.0` 会生成 `1.0.0` 镜像标签。Pull Request 只构建验证，不推送。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需额外配置镜像仓库密码。
+工作流位于 `.github/workflows/docker.yml`。推送到 `main` 或 `master`、推送 `v*` 或 `release-v*` 标签以及手动运行时，会构建框架镜像并发布到 `ghcr.io/<仓库所有者>/<仓库名>`。例如 `release-v1.1.0` 会生成 `1.1.0` 镜像标签。Pull Request 只构建验证，不推送。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需额外配置镜像仓库密码。
 
 服务器使用 GHCR 镜像时，可设置镜像名后启动：
 

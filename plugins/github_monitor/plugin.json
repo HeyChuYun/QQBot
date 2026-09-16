@@ -1,7 +1,7 @@
 {
   "id": "github_monitor",
   "name": "GitHub 提交监听",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "监听 GitHub 仓库提交并推送到 QQ 群",
   "entrypoint": "plugin.py:GitHubMonitorPlugin",
   "enabled": true

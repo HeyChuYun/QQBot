@@ -3,12 +3,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import os
 import re
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from string import Template
 from typing import Any, Optional
 
 from botpy import logging
@@ -29,6 +27,7 @@ from .renderer import CommitCardRenderer
 logger = logging.get_logger()
 REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 OPENID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{10,128}$")
+ENV_REFERENCE_PATTERN = re.compile(r"\$\{[^}]+\}")
 
 
 def parse_bool(value: str, default: bool = False) -> bool:
@@ -51,11 +50,19 @@ class GitHubPluginSettings:
 
     @classmethod
     def load(cls, plugin_dir: Path) -> "GitHubPluginSettings":
-        config = dotenv_values(plugin_dir / "config.env")
+        config_path = plugin_dir / "config.env"
+        if not config_path.is_file():
+            raise ValueError(f"插件配置不存在：{config_path}")
+        config = dotenv_values(config_path, interpolate=False)
 
         def value(name: str, default: str = "") -> str:
             configured = str(config.get(name) or "").strip()
-            return configured or os.getenv(name, default).strip()
+            if ENV_REFERENCE_PATTERN.search(configured):
+                raise ValueError(
+                    f"{config_path} 的 {name} 不允许引用环境变量，"
+                    "请直接填写配置值"
+                )
+            return configured or default
 
         subscriptions = load_subscriptions(plugin_dir / "subscriptions.json")
 
@@ -86,7 +93,11 @@ class GitHubPluginSettings:
 def load_subscriptions(path: Path) -> tuple[Subscription, ...]:
     if not path.is_file():
         raise ValueError(f"订阅配置不存在：{path}")
-    raw_text = Template(path.read_text(encoding="utf-8")).safe_substitute(os.environ)
+    raw_text = path.read_text(encoding="utf-8")
+    if ENV_REFERENCE_PATTERN.search(raw_text):
+        raise ValueError(
+            f"{path} 不允许引用环境变量，请直接填写 user_openid 或 group_openid"
+        )
     data = json.loads(raw_text)
     subscriptions: list[Subscription] = []
     for config_key, target_type in (("personal", "personal"), ("groups", "group")):
