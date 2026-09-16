@@ -28,7 +28,7 @@ class GitHubRendererTest(TestCase):
             template = Path(temp) / "template.html"
             template.write_text(
                 "<p>{{REPOSITORY}} - {{TITLE}} - {{AUTHOR}} - "
-                "{{SHA}} - {{TIMESTAMP}}</p>",
+                "{{SHA}} - {{TIMESTAMP}} - {{BRAND_IMAGE_KIND}}</p>",
                 encoding="utf-8",
             )
             commit = Commit(
@@ -43,5 +43,22 @@ class GitHubRendererTest(TestCase):
             html = build_commit_html(commit, template)
             self.assertEqual(
                 html,
-                "<p>owner/repo - new commit - developer - abcdef1 - 刚刚</p>",
+                "<p>owner/repo - new commit - developer - abcdef1 - 刚刚 - "
+                "github-icon</p>",
             )
+
+    def test_brand_image_uses_commit_metadata(self):
+        commit = Commit(
+            repository="owner/repo",
+            sha="abcdef123456",
+            title="new commit",
+            author="developer",
+            committed_at="",
+            url="",
+            brand_image_url="https://example.test/social.png",
+            brand_image_kind="social-preview",
+        )
+        html = build_commit_html(commit)
+
+        self.assertIn('src="https://example.test/social.png"', html)
+        self.assertIn("brand-image social-preview", html)

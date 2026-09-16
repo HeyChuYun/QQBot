@@ -5,9 +5,13 @@ from unittest import TestCase
 from plugins.github_monitor.monitor import (
     Commit,
     CommitStateStore,
+    GITHUB_BRANDING,
+    RepositoryBranding,
     Subscription,
     format_notification,
+    is_custom_social_preview,
     new_commits,
+    select_repository_branding,
 )
 
 
@@ -45,4 +49,48 @@ class GitHubMonitorTest(TestCase):
         second = Subscription("group", "测试群", "group-2", ("owner/repo",))
         self.assertNotEqual(
             first.state_key("owner/repo"), second.state_key("owner/repo")
+        )
+
+    def test_custom_social_preview_has_highest_priority(self):
+        branding = select_repository_branding(
+            True,
+            "https://repository-images.githubusercontent.com/1/preview.png",
+            "Organization",
+            "https://avatars.githubusercontent.com/u/1",
+        )
+        self.assertEqual(branding.image_kind, "social-preview")
+
+    def test_organization_avatar_is_the_second_choice(self):
+        branding = select_repository_branding(
+            False,
+            "",
+            "Organization",
+            "https://avatars.githubusercontent.com/u/1",
+        )
+        self.assertEqual(
+            branding,
+            RepositoryBranding(
+                "https://avatars.githubusercontent.com/u/1", "owner-avatar"
+            ),
+        )
+
+    def test_personal_repository_uses_github_icon(self):
+        branding = select_repository_branding(
+            False,
+            "",
+            "User",
+            "https://avatars.githubusercontent.com/u/1",
+        )
+        self.assertEqual(branding, GITHUB_BRANDING)
+
+    def test_only_repository_images_domain_is_custom_preview(self):
+        self.assertTrue(
+            is_custom_social_preview(
+                "https://repository-images.githubusercontent.com/1/image.png"
+            )
+        )
+        self.assertFalse(
+            is_custom_social_preview(
+                "https://opengraph.githubassets.com/hash/owner/repo"
+            )
         )

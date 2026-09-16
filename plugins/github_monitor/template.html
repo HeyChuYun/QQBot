@@ -32,15 +32,26 @@
     font-size: 25px;
     font-weight: 700;
   }
-  .mark {
-    display: grid;
-    place-items: center;
+  .brand-image {
+    display: block;
     width: 46px;
     height: 46px;
     border-radius: 8px;
-    background: #24292f;
-    color: #fff;
-    font-size: 24px;
+    object-fit: cover;
+    flex: 0 0 auto;
+  }
+  .brand-image.social-preview {
+    width: 168px;
+    height: 88px;
+  }
+  .brand-image.owner-avatar {
+    border: 1px solid #d8dee4;
+  }
+  .brand-image.github-icon {
+    padding: 7px;
+    background: #f6f8fa;
+    border: 1px solid #d8dee4;
+    object-fit: contain;
   }
   .badge {
     padding: 8px 13px;
@@ -87,7 +98,12 @@
   <main class="card">
     <div class="top">
       <div class="brand">
-        <span class="mark">G</span>
+        <img
+          class="brand-image {{BRAND_IMAGE_KIND}}"
+          src="{{BRAND_IMAGE_URL}}"
+          alt=""
+          onerror="this.onerror=null; this.src='{{GITHUB_ICON_URL}}'; this.className='brand-image github-icon';"
+        >
         <span>GitHub 仓库动态</span>
       </div>
       <span class="badge">新提交</span>

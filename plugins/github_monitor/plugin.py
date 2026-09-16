@@ -15,7 +15,7 @@ from botpy import logging
 from botpy.http import Route
 from dotenv import dotenv_values
 
-from qqbot_app.plugin import BotPlugin, MessageContext, PluginCommand
+from qqbot_app.plugin import BotPlugin
 
 from .monitor import (
     Commit,
@@ -132,13 +132,6 @@ def load_subscriptions(path: Path) -> tuple[Subscription, ...]:
 
 
 class GitHubMonitorPlugin(BotPlugin):
-    commands = (
-        PluginCommand(
-            name="仓库状态",
-            description="查看GitHub监听状态",
-        ),
-    )
-
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
         self.settings = GitHubPluginSettings.load(self.plugin_dir)
@@ -264,19 +257,3 @@ class GitHubMonitorPlugin(BotPlugin):
                 msg_type=0,
                 content=content,
             )
-
-    async def handle_command(
-        self, context: MessageContext, command: PluginCommand
-    ) -> Optional[str]:
-        if not self.settings.enabled:
-            return "GitHub 监听插件：已停用"
-        if self.monitor:
-            return self.monitor.status_text()
-        repositories = tuple(
-            dict.fromkeys(
-                repository
-                for subscription in self.settings.subscriptions
-                for repository in subscription.repositories
-            )
-        )
-        return f"GitHub 监听：未启动\n仓库：{'、'.join(repositories) or '未配置'}"

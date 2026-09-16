@@ -4,7 +4,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from .monitor import Commit, display_time
+from .monitor import Commit, GITHUB_ICON_URL, display_time
 
 
 DEFAULT_TEMPLATE_PATH = Path(__file__).with_name("template.html")
@@ -14,6 +14,9 @@ TEMPLATE_FIELDS = {
     "{{AUTHOR}}": lambda commit: commit.author,
     "{{SHA}}": lambda commit: commit.sha[:7],
     "{{TIMESTAMP}}": lambda commit: display_time(commit.committed_at) or "刚刚",
+    "{{BRAND_IMAGE_URL}}": lambda commit: commit.brand_image_url,
+    "{{BRAND_IMAGE_KIND}}": lambda commit: commit.brand_image_kind,
+    "{{GITHUB_ICON_URL}}": lambda commit: GITHUB_ICON_URL,
 }
 
 
@@ -63,7 +66,9 @@ class CommitCardRenderer:
             device_scale_factor=1,
         )
         try:
-            await page.set_content(build_commit_html(commit), wait_until="load")
+            await page.set_content(
+                build_commit_html(commit), wait_until="networkidle"
+            )
             return await page.locator(".card").screenshot(type="png")
         finally:
             await page.close()

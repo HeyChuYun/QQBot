@@ -4,9 +4,10 @@ import asyncio
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import aiohttp
 from botpy import logging
@@ -15,6 +16,16 @@ from botpy import logging
 logger = logging.get_logger()
 GITHUB_API_URL = "https://api.github.com"
 MAX_COMMITS_PER_POLL = 20
+GITHUB_ICON_URL = "https://github.githubassets.com/favicons/favicon.svg"
+
+
+@dataclass(frozen=True)
+class RepositoryBranding:
+    image_url: str
+    image_kind: str
+
+
+GITHUB_BRANDING = RepositoryBranding(GITHUB_ICON_URL, "github-icon")
 
 
 @dataclass(frozen=True)
@@ -25,6 +36,8 @@ class Commit:
     author: str
     committed_at: str
     url: str
+    brand_image_url: str = GITHUB_ICON_URL
+    brand_image_kind: str = "github-icon"
 
 
 @dataclass(frozen=True)
@@ -66,7 +79,43 @@ class CommitStateStore:
         temporary.replace(self.path)
 
 
-def parse_commit(repository: str, data: dict[str, Any]) -> Commit:
+def select_repository_branding(
+    uses_custom_preview: bool,
+    preview_url: str,
+    owner_type: str,
+    owner_avatar_url: str,
+) -> RepositoryBranding:
+    if uses_custom_preview and preview_url:
+        return RepositoryBranding(preview_url, "social-preview")
+    if owner_type.lower() == "organization" and owner_avatar_url:
+        return RepositoryBranding(owner_avatar_url, "owner-avatar")
+    return GITHUB_BRANDING
+
+
+class OpenGraphImageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.image_url = ""
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, Optional[str]]]
+    ) -> None:
+        if tag.lower() != "meta" or self.image_url:
+            return
+        values = dict(attrs)
+        if values.get("property") == "og:image":
+            self.image_url = values.get("content") or ""
+
+
+def is_custom_social_preview(image_url: str) -> bool:
+    return urlparse(image_url).hostname == "repository-images.githubusercontent.com"
+
+
+def parse_commit(
+    repository: str,
+    data: dict[str, Any],
+    branding: RepositoryBranding = GITHUB_BRANDING,
+) -> Commit:
     commit_data = data.get("commit", {})
     api_author = data.get("author") or {}
     git_author = commit_data.get("author") or {}
@@ -78,6 +127,8 @@ def parse_commit(repository: str, data: dict[str, Any]) -> Commit:
         author=str(api_author.get("login") or git_author.get("name") or "未知"),
         committed_at=str(git_author.get("date") or ""),
         url=str(data.get("html_url") or ""),
+        brand_image_url=branding.image_url,
+        brand_image_kind=branding.image_kind,
     )
 
 
@@ -144,24 +195,7 @@ class GitHubCommitMonitor:
         self.include_link = include_link
         self.send_notification = send_notification
         self.state = CommitStateStore(state_file)
-
-    def status_text(self) -> str:
-        repositories = "、".join(self.repositories) or "未配置"
-        personal_count = sum(
-            subscription.target_type == "personal"
-            for subscription in self.subscriptions
-        )
-        group_count = sum(
-            subscription.target_type == "group"
-            for subscription in self.subscriptions
-        )
-        return (
-            f"GitHub 监听：{'运行中' if self.repositories else '未配置'}\n"
-            f"仓库：{repositories}\n"
-            f"个人订阅：{personal_count} 个\n"
-            f"群组订阅：{group_count} 个\n"
-            f"检查间隔：{self.interval_seconds} 秒"
-        )
+        self._branding_cache: dict[str, RepositoryBranding] = {}
 
     async def run(self) -> None:
         headers = {
@@ -225,6 +259,7 @@ class GitHubCommitMonitor:
     async def fetch_commits(
         self, session: aiohttp.ClientSession, repository: str
     ) -> list[Commit]:
+        branding = await self.fetch_repository_branding(session, repository)
         owner, name = repository.split("/", 1)
         url = (
             f"{GITHUB_API_URL}/repos/{quote(owner, safe='')}/"
@@ -240,4 +275,85 @@ class GitHubCommitMonitor:
                     f"GitHub API 请求失败：{repository}，"
                     f"HTTP {response.status}，{message}"
                 )
-        return [parse_commit(repository, item) for item in data]
+        return [parse_commit(repository, item, branding) for item in data]
+
+    async def fetch_repository_branding(
+        self, session: aiohttp.ClientSession, repository: str
+    ) -> RepositoryBranding:
+        cached = self._branding_cache.get(repository)
+        if cached:
+            return cached
+
+        try:
+            if self.token:
+                branding = await self._fetch_branding_graphql(session, repository)
+            else:
+                branding = await self._fetch_branding_public(session, repository)
+        except Exception:
+            logger.exception("读取仓库品牌图片失败，将使用 GitHub 图标：%s", repository)
+            branding = GITHUB_BRANDING
+        self._branding_cache[repository] = branding
+        logger.info("仓库 %s 使用品牌图片类型：%s", repository, branding.image_kind)
+        return branding
+
+    async def _fetch_branding_graphql(
+        self, session: aiohttp.ClientSession, repository: str
+    ) -> RepositoryBranding:
+        owner, name = repository.split("/", 1)
+        query = """
+        query RepositoryBranding($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            usesCustomOpenGraphImage
+            openGraphImageUrl
+            owner {
+              __typename
+              avatarUrl
+            }
+          }
+        }
+        """
+        async with session.post(
+            f"{GITHUB_API_URL}/graphql",
+            json={"query": query, "variables": {"owner": owner, "name": name}},
+        ) as response:
+            data = await response.json(content_type=None)
+            if response.status >= 400 or data.get("errors"):
+                raise RuntimeError(
+                    f"GitHub GraphQL 请求失败：HTTP {response.status}，"
+                    f"{data.get('errors') or data}"
+                )
+        repository_data = (data.get("data") or {}).get("repository") or {}
+        owner_data = repository_data.get("owner") or {}
+        return select_repository_branding(
+            bool(repository_data.get("usesCustomOpenGraphImage")),
+            str(repository_data.get("openGraphImageUrl") or ""),
+            str(owner_data.get("__typename") or ""),
+            str(owner_data.get("avatarUrl") or ""),
+        )
+
+    async def _fetch_branding_public(
+        self, session: aiohttp.ClientSession, repository: str
+    ) -> RepositoryBranding:
+        owner, name = repository.split("/", 1)
+        api_url = (
+            f"{GITHUB_API_URL}/repos/{quote(owner, safe='')}/"
+            f"{quote(name, safe='')}"
+        )
+        async with session.get(api_url) as response:
+            repository_data = await response.json(content_type=None)
+            if response.status >= 400:
+                raise RuntimeError(
+                    f"GitHub 仓库信息请求失败：HTTP {response.status}"
+                )
+
+        owner_data = repository_data.get("owner") or {}
+        parser = OpenGraphImageParser()
+        async with session.get(f"https://github.com/{repository}") as response:
+            if response.status < 400:
+                parser.feed(await response.text())
+        return select_repository_branding(
+            is_custom_social_preview(parser.image_url),
+            parser.image_url,
+            str(owner_data.get("type") or ""),
+            str(owner_data.get("avatar_url") or ""),
+        )
