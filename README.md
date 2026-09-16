@@ -194,7 +194,7 @@ docker compose run --rm qqbot python sync_commands.py
 
 ## 8. GitHub Actions
 
-工作流位于 `.github/workflows/docker.yml`。推送到 `main` 或 `master`、推送 `v*` 标签以及手动运行时，会构建框架镜像并发布到 `ghcr.io/<仓库所有者>/<仓库名>`。Pull Request 只构建验证，不推送。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需额外配置镜像仓库密码。
+工作流位于 `.github/workflows/docker.yml`。推送到 `main` 或 `master`、推送 `v*` 或 `release-v*` 标签以及手动运行时，会构建框架镜像并发布到 `ghcr.io/<仓库所有者>/<仓库名>`。例如 `release-v1.0.0` 会生成 `1.0.0` 镜像标签。Pull Request 只构建验证，不推送。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需额外配置镜像仓库密码。
 
 服务器使用 GHCR 镜像时，可设置镜像名后启动：
 
