@@ -1,0 +1,1 @@
+"""fnOS monitoring plugin."""

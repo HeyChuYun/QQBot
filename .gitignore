@@ -9,4 +9,5 @@ __pycache__/
 data/github_state.json
 plugins/*/config.env
 plugins/*/subscriptions.json
+plugins/*/admins.json
 plugins/*/data/

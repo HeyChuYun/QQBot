@@ -1,0 +1,8 @@
+{
+  "id": "fnos_monitor",
+  "name": "飞牛系统监控",
+  "version": "1.0.0",
+  "description": "查询飞牛 fnOS 状态，并在 UPS 断电或恢复供电时通知管理员",
+  "entrypoint": "plugin.py:FnosMonitorPlugin",
+  "enabled": true
+}

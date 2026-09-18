@@ -12,6 +12,8 @@
 - `/帮助` 查看核心命令和插件自行注册的命令
 - `/我的ID` 在单聊中查询配置管理者所需的 `user_openid`
 - 定时监听一个或多个 GitHub 仓库的默认分支提交，并主动通知指定 QQ 群
+- 查询飞牛 fnOS 的系统、CPU、内存、硬盘和 UPS 状态
+- 飞牛 UPS 切换到电池供电或恢复市电时主动通知管理员
 - `/本群ID` 查询配置通知目标所需的 `group_openid`
 - 其他文字原样回显，方便继续添加业务逻辑
 
@@ -33,6 +35,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m pip install -r plugins/github_monitor/requirements.txt
+python -m pip install -r plugins/fnos_monitor/requirements.txt
 Copy-Item .env.example .env
 ```
 
@@ -111,7 +114,53 @@ python bot.py
 
 `GITHUB_INCLUDE_LINK=false` 控制降级文本是否包含链接。需要链接时改为 `true`，并先在 QQ 开放平台配置 `github.com` 白名单。主动消息仍受 QQ 平台权限和频次限制。
 
-## 5. 项目结构
+## 5. 飞牛系统监控
+
+插件目录为 `plugins/fnos_monitor/`，使用社区维护的非官方 Python SDK
+[`fnos`](https://pypi.org/project/fnos/) 连接飞牛的 WebSocket 接口。插件可以通过
+`/飞牛状态` 查询主机、版本、运行时间、CPU、内存、硬盘及 UPS 状态；该命令仅在机器人单聊中提供，并只允许 `admins.json` 中的管理员使用。
+
+先创建插件配置：
+
+```powershell
+Copy-Item plugins/fnos_monitor/config.example.env plugins/fnos_monitor/config.env
+Copy-Item plugins/fnos_monitor/admins.example.json plugins/fnos_monitor/admins.json
+```
+
+在 `config.env` 中直接填写飞牛地址、管理员账号和密码。普通局域网部署一般使用：
+
+```dotenv
+FNOS_ENDPOINT=192.168.1.10:5666
+FNOS_USERNAME=admin
+FNOS_PASSWORD=你的飞牛密码
+FNOS_USE_SSL=false
+FNOS_SKIP_SSL_VERIFY=true
+```
+
+如果飞牛强制 HTTPS，可将地址改为 `wss://飞牛地址:5667` 并设置
+`FNOS_USE_SSL=true`。如果账号开启了两步验证，无人值守登录无法临时输入验证码，需要在配置中改用完整的 `FNOS_TOKEN`、`FNOS_LONG_TOKEN` 和 `FNOS_SECRET` 登录凭据。
+
+管理员先与机器人单聊发送 `/我的ID`，再把返回的 `user_openid` 直接写入
+`admins.json`：
+
+```json
+{
+  "admins": [
+    {"name": "管理员", "openid": "实际的 user_openid"}
+  ]
+}
+```
+
+`UPS_MONITOR_ENABLED=true` 时，插件默认每 60 秒读取一次 UPS。首次读到正常市电只建立基线；首次启动已经停电，或之后从市电切换到电池供电时，会立即私聊所有管理员。`NOTIFY_ON_RECOVERY=true` 还会在市电恢复时通知。每位管理员的状态独立保存在 `plugins/fnos_monitor/data/state.json`，持续停电期间不会重复发送相同提醒。
+
+配置完成后重启机器人，并重新同步一次 QQ `/` 指令面板：
+
+```powershell
+python sync_commands.py
+python bot.py
+```
+
+## 6. 项目结构
 
 ```text
 bot.py                         启动入口
@@ -121,12 +170,13 @@ qqbot_app/commands.py          指令定义与普通回复
 qqbot_app/client.py            QQ 事件分发
 qqbot_app/plugin.py            插件发现、生命周期和指令分发
 plugins/github_monitor/        GitHub 监听插件（代码、配置、数据）
+plugins/fnos_monitor/          飞牛系统与 UPS 监控插件
 tests/                         单元测试
 ```
 
 本项目通过 WebSocket 接收官方事件，不需要为了收消息额外搭建公网 HTTP 回调地址。进程必须持续运行；部署到服务器时需要使用守护进程、容器或云服务保持在线。
 
-## 6. 插件系统
+## 7. 插件系统
 
 机器人启动时会扫描 `plugins/` 下所有带 `plugin.json` 的目录。每个插件独立包含入口代码、配置和运行数据；删除整个插件目录并重启服务，即可彻底移除该功能。修改插件指令后再执行一次 `python sync_commands.py`，QQ 输入框中的 `/` 补全也会同步更新。
 
@@ -168,7 +218,7 @@ GitHub 通知图片的 HTML 和 CSS 位于 `plugins/github_monitor/template.html
 | 群内 @ 机器人 | `on_group_at_message_create` | `public_messages` |
 | 消息列表单聊 | `on_c2c_message_create` | `public_messages` |
 
-## 7. Docker 部署
+## 8. Docker 部署
 
 Docker 镜像只包含机器人框架，不包含 `plugins/` 下的任何插件代码、配置或数据。`Dockerfile` 只复制核心文件，`.dockerignore` 同时排除整个插件目录，构建阶段还会检查容器中的 `/app/plugins` 是否为空。
 
@@ -201,7 +251,7 @@ docker compose run --rm qqbot python sync_commands.py
 - `PLUGIN_PIP_RETRIES`：失败重试次数，默认 `10`。
 - `PLUGIN_PIP_CACHE_DIR`：下载缓存目录，默认 `/app/.pip-cache`。
 
-## 8. GitHub Actions
+## 9. GitHub Actions
 
 工作流位于 `.github/workflows/docker.yml`。推送到 `main` 或 `master`、推送 `v*` 或 `release-v*` 标签以及手动运行时，会构建框架镜像并发布到 `ghcr.io/<仓库所有者>/<仓库名>`。例如 `release-v1.1.0` 会生成 `1.1.0` 镜像标签。Pull Request 只构建验证，不推送。工作流使用 GitHub 自动提供的 `GITHUB_TOKEN`，无需额外配置镜像仓库密码。
 
